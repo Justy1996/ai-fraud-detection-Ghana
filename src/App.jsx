@@ -1,12 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
-  ShieldCheck, 
   ShieldAlert, 
   Activity, 
   TrendingUp, 
   Bell, 
   Database, 
-  Cpu, 
   Brain,
   Eye,
   Lock,
@@ -16,7 +14,13 @@ import {
   Settings,
   XCircle,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw,
+  FileDown,
+  Info,
+  ChevronRight,
+  ShieldCheck,
+  Zap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -43,9 +47,9 @@ ChartJS.register(
   Filler
 );
 
-const GHANA_RED = '#d40000';
-const GHANA_GOLD = '#fcd116';
-const GHANA_GREEN = '#006b3f';
+const GHANA_RED = '#D32F2F';
+const GHANA_GOLD = '#FFD700';
+const GHANA_GREEN = '#006B3F';
 
 const App = () => {
   const [transactions, setTransactions] = useState([]);
@@ -57,18 +61,34 @@ const App = () => {
   });
   const [showAlert, setShowAlert] = useState(false);
   const [activeAlert, setActiveAlert] = useState(null);
+  const [toasts, setToasts] = useState([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [selectedTx, setSelectedTx] = useState(null);
+
+  // Toast Helper
+  const addToast = useCallback((message, type = 'info') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
+  }, []);
 
   // Simulate real-time transaction ingestion
   useEffect(() => {
     const interval = setInterval(() => {
-      const isFraud = Math.random() > 0.92;
+      if (isRefreshing) return;
+      
+      const isFraud = Math.random() > 0.94;
       const newTx = {
         id: Math.random().toString(36).substr(2, 9).toUpperCase(),
         time: new Date().toLocaleTimeString(),
-        amount: (Math.random() * 5000).toFixed(2),
+        amount: (Math.random() * 5000 + 50).toFixed(2),
         type: ['TRANSFER', 'CASH-OUT', 'PAYMENT', 'DEBIT'][Math.floor(Math.random() * 4)],
         status: isFraud ? 'FRAUD' : 'LEGIT',
-        confidence: (Math.random() * 0.4 + 0.6).toFixed(2)
+        confidence: (Math.random() * 0.4 + 0.6).toFixed(2),
+        isBlocked: false,
+        isApproved: false
       };
 
       setTransactions(prev => [newTx, ...prev].slice(0, 10));
@@ -80,10 +100,43 @@ const App = () => {
       } else {
         setStats(s => ({ ...s, total: s.total + 1 }));
       }
-    }, 3000);
+    }, 4000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [isRefreshing]);
+
+  // Handlers
+  const handleBlock = (txId) => {
+    setTransactions(prev => prev.map(tx => 
+      tx.id === txId ? { ...tx, isBlocked: true, status: 'BLOCKED' } : tx
+    ));
+    addToast(`Transaction ${txId} blocked successfully – Fraud score: 0.98`, 'danger');
+    setShowAlert(false);
+  };
+
+  const handleApprove = (txId) => {
+    setTransactions(prev => prev.map(tx => 
+      tx.id === txId ? { ...tx, isApproved: true, status: 'LEGIT' } : tx
+    ));
+    addToast(`Transaction ${txId} approved – Legitimate`, 'success');
+  };
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    addToast('Refreshing dashboard data...', 'info');
+    setTimeout(() => {
+      setTransactions([]);
+      setIsRefreshing(false);
+      addToast('Model synchronized with Bank of Ghana data', 'success');
+    }, 1500);
+  };
+
+  const handleExport = () => {
+    addToast('Generating BoG Compliance Report (PDF)...', 'info');
+    setTimeout(() => {
+      addToast('Report saved: aifds_compliance_2026.pdf', 'success');
+    }, 2000);
+  };
 
   const chartData = {
     labels: ['2023 Q1', '2023 Q2', '2023 Q3', '2023 Q4', '2024 Q1', '2024 Q2', '2024 Q3', '2024 Q4', '2025 Q1'],
@@ -92,7 +145,7 @@ const App = () => {
         label: 'Fraud Attempts Detected',
         data: [120, 190, 150, 280, 220, 310, 290, 450, 380],
         borderColor: GHANA_GOLD,
-        backgroundColor: 'rgba(252, 209, 22, 0.1)',
+        backgroundColor: 'rgba(255, 215, 0, 0.1)',
         fill: true,
         tension: 0.4,
       },
@@ -109,6 +162,25 @@ const App = () => {
 
   return (
     <div className="dashboard-container">
+      {/* Toast Notifier */}
+      <div className="toast-container">
+        <AnimatePresence>
+          {toasts.map(t => (
+            <motion.div 
+              key={t.id} 
+              initial={{ x: 100, opacity: 0 }} 
+              animate={{ x: 0, opacity: 1 }} 
+              exit={{ x: 100, opacity: 0 }}
+              className="toast"
+              style={{ borderLeft: `4px solid ${t.type === 'danger' ? GHANA_RED : t.type === 'success' ? GHANA_GREEN : GHANA_GOLD}` }}
+            >
+              {t.type === 'danger' ? <XCircle color={GHANA_RED} size={20} /> : t.type === 'success' ? <CheckCircle2 color={GHANA_GREEN} size={20} /> : <Info color={GHANA_GOLD} size={20} />}
+              <span>{t.message}</span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="logo">
@@ -120,17 +192,16 @@ const App = () => {
           <div className="nav-item"><Database size={18} /> Transactions</div>
           <div className="nav-item"><BarChart3 size={18} /> Model Analytics</div>
           <div className="nav-item"><ShieldAlert size={18} /> Fraud Alerts</div>
-          <div className="nav-item"><MessageSquare size={18} /> Compliance Reports</div>
-          <div className="nav-item" style={{ marginTop: 'auto' }}><Settings size={18} /> System Settings</div>
+          <div className="nav-item" onClick={handleExport}><MessageSquare size={18} /> Compliance Report</div>
+          <div className="nav-item" style={{ marginTop: 'auto' }}><Settings size={18} /> Settings</div>
         </nav>
 
-        {/* Security Tip Box (Visual reference to "Think Before You Click") */}
-        <div style={{ marginTop: '2rem', padding: '1rem', background: 'rgba(252,209,22,0.05)', borderRadius: '12px', border: '1px dashed var(--color-gh-gold)' }}>
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', color: 'var(--color-gh-gold)' }}>
-            <Lock size={16} /> <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>SECURITY TIP</span>
+        <div style={{ marginTop: '2rem', padding: '1.2rem', background: 'rgba(255,215,0,0.05)', borderRadius: '15px', border: '1px solid rgba(255,215,0,0.1)' }}>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', color: GHANA_GOLD }}>
+            <Lock size={16} /> <span style={{ fontSize: '0.8rem', fontWeight: 800 }}>SECURITY TIP</span>
           </div>
-          <p style={{ fontSize: '0.75rem', color: '#888', margin: 0 }}>
-            Educate customers: "Never share your Mobile Money PIN with anyone."
+          <p style={{ fontSize: '0.75rem', color: '#8b949e', margin: 0, lineHeight: '1.4' }}>
+            "Ghana MoMo users: Never share your PIN with anyone, even telco staff."
           </p>
         </div>
       </aside>
@@ -139,52 +210,60 @@ const App = () => {
       <main className="main-content">
         <header className="header">
           <div>
-            <h1 style={{ margin: 0, fontSize: '1.5rem' }}>National Monitoring Dashboard</h1>
-            <p style={{ color: 'var(--text-muted)', margin: 0 }}>Real-time Fraud Prevention for Ghana</p>
+            <h1 style={{ margin: 0, fontSize: '1.8rem', fontWeight: 800 }}>AIFDS Monitoring</h1>
+            <p style={{ color: 'var(--text-muted)', margin: 0 }}>Real-time Fraud Prevention • Ghana National Platform</p>
           </div>
+          
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-            <div className="card" style={{ padding: '8px 16px', display: 'flex', gap: '12px', alignItems: 'center' }}>
-              <CheckCircle2 color={GHANA_GREEN} size={20} />
-              <span style={{ fontSize: '0.8rem' }}>SMOTE-XGBoost Active</span>
+            <button className="btn btn-ghost" onClick={handleRefresh} disabled={isRefreshing}>
+              <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
+              {isRefreshing ? 'Syncing...' : 'Sync Data'}
+            </button>
+            <button className="btn btn-primary" onClick={handleExport}>
+              <FileDown size={16} /> Export BoG Report
+            </button>
+            <div style={{ width: '40px', height: '40px', background: '#1c2128', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--glass-border)' }}>
+              <Bell size={18} color={GHANA_GOLD} />
             </div>
-            <Search color="#444" size={20} style={{ cursor: 'pointer' }} />
-            <Bell color="#444" size={20} style={{ cursor: 'pointer' }} />
-            <img src="https://flagcdn.com/w40/gh.png" alt="Ghana Flag" style={{ width: '24px', borderRadius: '4px' }} />
+            <img src="https://flagcdn.com/w80/gh.png" alt="Ghana Flag" style={{ width: '32px', borderRadius: '4px', boxShadow: '0 4px 10px rgba(0,0,0,0.3)' }} />
           </div>
         </header>
 
         {/* Top Stats */}
         <section className="stats-grid">
-          <div className="card">
-            <div className="card-title">TOTAL TRANSACTIONS (24H)</div>
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="card">
+            <div className="card-title">Transactions (24H)</div>
             <div className="card-value">{stats.total.toLocaleString()}</div>
-            <div className="card-trend trend-up"><TrendingUp size={12} /> +12.5% from avg</div>
-          </div>
-          <div className="card" style={{ borderLeft: `4px solid ${GHANA_RED}` }}>
-            <div className="card-title">FRAUD BLOCKED</div>
+            <div className="card-trend trend-up"><TrendingUp size={14} /> +12% growth</div>
+          </motion.div>
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="card" style={{ borderLeft: `4px solid ${GHANA_RED}` }}>
+            <div className="card-title">Fraud Blocked</div>
             <div className="card-value" style={{ color: GHANA_RED }}>{stats.fraud}</div>
-            <div className="card-trend">Est. Saving: GHS 1.2M</div>
-          </div>
-          <div className="card">
-            <div className="card-title">MODEL PRECISION</div>
+            <div className="card-trend">Est. Loss Preven: GHS 1.4M</div>
+          </motion.div>
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="card">
+            <div className="card-title">Model Precision</div>
             <div className="card-value" style={{ color: GHANA_GREEN }}>{(stats.precision * 100).toFixed(1)}%</div>
-            <div className="card-trend">Bank of Ghana Standard: 90%</div>
-          </div>
-          <div className="card">
-            <div className="card-title">RECALL (DETECTION RATE)</div>
+            <div className="card-trend">BoG Standard: 90%</div>
+          </motion.div>
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="card">
+            <div className="card-title">Detection Rate (Recall)</div>
             <div className="card-value" style={{ color: GHANA_GOLD }}>{(stats.recall * 100).toFixed(1)}%</div>
-            <div className="card-trend">Target: 98%</div>
-          </div>
+            <div className="card-trend"><Activity size={14} /> Peak Performance</div>
+          </motion.div>
         </section>
 
-        {/* Middle Visuals */}
+        {/* Middle Visualization */}
         <section className="live-feed-section">
           <div className="live-feed">
             <div className="feed-header">
-              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Eye size={18} color={GHANA_GOLD} /> LIVE TRANSACTION INGESTION
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Activity size={20} color={GHANA_GOLD} /> LIVE STREAM ANALYSIS
               </h3>
-              <span style={{ color: GHANA_GREEN, fontSize: '0.8rem', fontWeight: 700 }}>Latency: 42ms</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '0.75rem', color: GHANA_GREEN, fontWeight: 800 }}>● SECURE PIPELINE</span>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}> Latency: 34ms</span>
+              </div>
             </div>
             
             <div className="transaction-list">
@@ -192,20 +271,48 @@ const App = () => {
                 {transactions.map(tx => (
                   <motion.div 
                     layout
-                    initial={{ opacity: 0, x: -20 }}
+                    initial={{ opacity: 0, x: -25 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, scale: 0.95 }}
                     key={tx.id} 
-                    className="tx-item"
-                    style={{ borderLeft: `3px solid ${tx.status === 'FRAUD' ? GHANA_RED : GHANA_GREEN}` }}
+                    className={`tx-item ${tx.isBlocked ? 'blocked' : ''}`}
+                    style={{ borderLeft: `4px solid ${tx.status === 'FRAUD' || tx.isBlocked ? GHANA_RED : GHANA_GREEN}` }}
                   >
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>TX-{tx.id}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>TX-{tx.id}</div>
                       <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{tx.type} • {tx.time}</div>
                     </div>
-                    <div style={{ fontWeight: 800 }}>GHS {tx.amount}</div>
-                    <div className={`status-indicator ${tx.status === 'FRAUD' ? 'status-fraud' : 'status-legit'}`}>
-                      {tx.status}
+                    
+                    <div style={{ flex: 1, textAlign: 'center' }}>
+                      <div style={{ fontWeight: 900, fontSize: '1.1rem' }}>GHS {tx.amount}</div>
+                    </div>
+
+                    <div style={{ flex: 1.5, display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                      {!tx.isBlocked && !tx.isApproved ? (
+                        <>
+                          <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: '0.75rem' }} onClick={() => setSelectedTx(tx)}>
+                            <Search size={14} />
+                          </button>
+                          <button 
+                            className="btn btn-success" 
+                            style={{ padding: '6px 12px', fontSize: '0.75rem' }}
+                            onClick={() => handleApprove(tx.id)}
+                          >
+                            <CheckCircle2 size={14} />
+                          </button>
+                          <button 
+                            className="btn btn-danger" 
+                            style={{ padding: '6px 12px', fontSize: '0.75rem' }}
+                            onClick={() => handleBlock(tx.id)}
+                          >
+                            <ShieldAlert size={14} />
+                          </button>
+                        </>
+                      ) : (
+                        <div className={`status-badge ${tx.isBlocked ? 'status-blocked' : 'status-legit'}`}>
+                          {tx.isBlocked ? 'BLOCKED' : 'VERIFIED SAFE'}
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 ))}
@@ -213,37 +320,47 @@ const App = () => {
             </div>
           </div>
 
-          <div className="card ai-engine-viz">
-            <h3 style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)' }}>AI CORE ENGINE</h3>
-            <div className="brain-pulse">
-              <Brain size={60} color={GHANA_GOLD} />
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2rem', textAlign: 'center' }}>
+            <h3 style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>AI SMOTE-XGBoost Core</h3>
+            <div className="brain-viz">
+              <Brain size={65} color={GHANA_GOLD} />
             </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontWeight: 700 }}>XGBoost SMOTE Engine</div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Analyzing 42 features/sec</div>
+            <div>
+              <div style={{ fontSize: '1.2rem', fontWeight: 800 }}>Neural Integrity: 99.8%</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '5px' }}>Analyzing 42 high-variance features</div>
             </div>
-            <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', borderTop: '1px solid #222', paddingTop: '1rem' }}>
-              <span>CPU: 12%</span>
-              <span>MEM: 1.4GB</span>
-              <span>TPS: 852</span>
+            <div style={{ width: '100%', display: 'flex', gap: '10px' }}>
+              <div style={{ flex: 1, padding: '10px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px' }}>
+                <div style={{ fontSize: '0.65rem', color: '#8b949e' }}>CPU LOAD</div>
+                <div style={{ fontWeight: 800, color: GHANA_GREEN }}>14.2%</div>
+              </div>
+              <div style={{ flex: 1, padding: '10px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px' }}>
+                <div style={{ fontSize: '0.65rem', color: '#8b949e' }}>TPS RATE</div>
+                <div style={{ fontWeight: 800, color: GHANA_GOLD }}>942/s</div>
+              </div>
             </div>
           </div>
         </section>
 
-        {/* Bottom Charts */}
-        <section style={{ marginTop: '2rem' }} className="card">
-          <h3 style={{ margin: '0 0 1.5rem 0' }}>Historical Fraud Trends (2023 - 2025)</h3>
-          <div style={{ height: '300px' }}>
+        {/* Historical Insight */}
+        <section style={{ marginTop: '2.5rem' }} className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <h3 style={{ margin: 0 }}>Fraud Trend Analysis (National Scale 2023 - 2025)</h3>
+            <button className="btn btn-ghost" style={{ fontSize: '0.7rem' }}>
+              <BarChart3 size={14} /> Full Analytics View
+            </button>
+          </div>
+          <div style={{ height: '320px' }}>
             <Line 
               data={chartData} 
               options={{ 
                 maintainAspectRatio: false,
                 scales: {
-                  y: { grid: { color: '#222' }, ticks: { color: '#666' } },
-                  x: { grid: { display: false }, ticks: { color: '#666' } }
+                  y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8b949e' } },
+                  x: { grid: { display: false }, ticks: { color: '#8b949e' } }
                 },
                 plugins: {
-                  legend: { position: 'bottom', labels: { color: '#aaa', boxWidth: 10 } }
+                  legend: { position: 'bottom', labels: { color: '#8b949e', boxWidth: 10, padding: 20 } }
                 }
               }} 
             />
@@ -251,43 +368,86 @@ const App = () => {
         </section>
       </main>
 
-      {/* Fraud Alert Modal - Visual reference to "Payment Was Denied" */}
+      {/* Fraud Alert Overlay - Perfectly Centered */}
       <AnimatePresence>
         {showAlert && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 999 }}
-            onClick={() => setShowAlert(false)}
-          >
+          <div className="overlay" onClick={() => setShowAlert(false)}>
             <motion.div 
-              initial={{ scale: 0.8, y: 100 }}
-              animate={{ scale: 1, y: 0 }}
               className="alert-modal"
               onClick={e => e.stopPropagation()}
             >
-              <div className="alert-icon">
-                <AlertTriangle size={64} />
+              <div style={{ marginBottom: '1.5rem' }}>
+                <AlertTriangle size={80} color={GHANA_RED} style={{ filter: 'drop-shadow(0 0 15px rgba(211,47,47,0.5))' }} />
               </div>
-              <div className="alert-title">FRAUD DETECTED</div>
-              <div className="alert-subtitle">Transaction <strong>TX-{activeAlert?.id}</strong> has been automatically blocked.</div>
+              <h2 style={{ fontSize: '2.2rem', fontWeight: 900, marginBottom: '0.5rem', color: GHANA_RED }}>FRAUD DETECTED</h2>
+              <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>
+                System high-confidence scan identified a potential fraudulent transaction: <strong>TX-{activeAlert?.id}</strong>.
+              </p>
               
-              <div style={{ background: '#1a1212', padding: '1rem', borderRadius: '12px', marginBottom: '2rem', textAlign: 'left' }}>
-                <div style={{ fontSize: '0.8rem', color: '#888' }}>REASON (TOP FEATURES):</div>
-                <div style={{ color: GHANA_RED, fontSize: '0.9rem', marginTop: '4px' }}>
-                  • Unusual Frequency (+400%)<br/>
-                  • High Balance Delta<br/>
-                  • Phishing Pattern Match
+              <div style={{ background: 'rgba(211,47,47,0.08)', border: '1px solid rgba(211,47,47,0.2)', padding: '1.5rem', borderRadius: '15px', marginBottom: '2.5rem', textAlign: 'left' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: GHANA_RED, fontWeight: 800, fontSize: '0.85rem', marginBottom: '10px' }}>
+                  <Zap size={16} /> PRIMARY RISK FACTORS
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.8rem' }}>
+                  <div style={{ borderLeft: `2px solid ${GHANA_RED}`, paddingLeft: '8px' }}>
+                    <div style={{ color: '#8b949e' }}>Frequency Bias</div>
+                    <div style={{ fontWeight: 700 }}>+420% vs Baseline</div>
+                  </div>
+                  <div style={{ borderLeft: `2px solid ${GHANA_RED}`, paddingLeft: '8px' }}>
+                    <div style={{ color: '#8b949e' }}>Location Delta</div>
+                    <div style={{ fontWeight: 700 }}>Out-of-Region Hop</div>
+                  </div>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
-                <button className="btn btn-primary" onClick={() => setShowAlert(false)}>ACKNOWLEDGE</button>
-                <button className="btn btn-danger">INVESTIGATE</button>
+              <div style={{ display: 'flex', gap: '1.2rem', justifyContent: 'center' }}>
+                <button className="btn btn-ghost" style={{ padding: '14px 30px' }} onClick={() => setShowAlert(false)}>DISMISS</button>
+                <button className="btn btn-danger" style={{ padding: '14px 40px', fontWeight: 800 }} onClick={() => handleBlock(activeAlert.id)}>
+                  BLOCK IMMEDIATELY
+                </button>
               </div>
             </motion.div>
-          </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Transaction Details Modal */}
+      <AnimatePresence>
+        {selectedTx && (
+          <div className="overlay" onClick={() => setSelectedTx(null)}>
+            <motion.div className="card" style={{ maxWidth: '500px', width: '90%', padding: '2.5rem' }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                <h2 style={{ margin: 0 }}>Transaction Audit</h2>
+                <XCircle size={24} color="#444" style={{ cursor: 'pointer' }} onClick={() => setSelectedTx(null)} />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.8rem' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Transaction ID</span>
+                  <span style={{ fontWeight: 700 }}>TX-{selectedTx.id}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.8rem' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Amount</span>
+                  <span style={{ fontWeight: 800, color: GHANA_GOLD }}>GHS {selectedTx.amount}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.8rem' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Fraud Probability</span>
+                  <span style={{ fontWeight: 700, color: selectedTx.status === 'FRAUD' ? GHANA_RED : GHANA_GREEN }}>
+                    {(selectedTx.confidence * 100).toFixed(1)}%
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '2.5rem', display: 'flex', gap: '1rem' }}>
+                <button className="btn btn-success" style={{ flex: 1 }} onClick={() => { handleApprove(selectedTx.id); setSelectedTx(null); }}>
+                  APPROVE
+                </button>
+                <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => { handleBlock(selectedTx.id); setSelectedTx(null); }}>
+                  BLOCK
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
